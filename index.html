@@ -116,11 +116,8 @@
   .jobs{display:flex;flex-direction:column;gap:12px;}
   .job{
     background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
-    padding:16px 18px;position:relative;overflow:hidden;transition:border-color .15s;
-  }
-  .job::before{
-    content:'';position:absolute;left:0;top:0;bottom:0;width:3px;
-    background:var(--edge, var(--s-none));
+    padding:16px 18px;position:relative;transition:border-color .15s;
+    box-shadow:inset 3px 0 0 0 var(--edge, var(--s-none));
   }
   .job-head{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;}
   .job-title-block{display:flex;flex-direction:column;gap:3px;min-width:0;}
@@ -253,6 +250,7 @@
       <button class="btn" id="btnTemplate" title="Edit referral message template">✎ Template</button>
       <button class="btn" id="btnImportXlsx" title="Import from Excel">⇪ Import Excel</button>
       <button class="btn" id="btnExportXlsx" title="Export to Excel">⇩ Export Excel</button>
+      <button class="btn btn-ghost" id="btnResetAll" title="Clear all jobs">⟲ Reset all</button>
       <button class="btn btn-primary" id="btnAddJob">+ Add Job</button>
     </div>
     <input type="file" id="fileInput" class="file-drop" accept=".xlsx,.xls">
@@ -745,6 +743,14 @@
     templateModal.style.display = "none";
   });
 
+  // ---------- reset ----------
+  document.getElementById("btnResetAll").addEventListener("click", function(){
+    if(confirm("This will delete ALL jobs and contacts from this browser. Export a backup first if you're not sure. Continue?")){
+      state.jobs = [];
+      save();
+    }
+  });
+
   // ---------- excel import ----------
   var fileInput = document.getElementById("fileInput");
   document.getElementById("btnImportXlsx").addEventListener("click", function(){ fileInput.click(); });
@@ -777,14 +783,20 @@
 
         var imported = [];
         for(var r = headerRow+1; r <= range.e.r; r++){
-          var get = function(col){ if(col<0) return null; return ws[XLSX.utils.encode_cell({r:r,c:col})]; };
+          var get = function(col){
+            if(col<0) return null;
+            var cell = ws[XLSX.utils.encode_cell({r:r,c:col})];
+            // skip cells that only carry leftover formatting with no real value
+            if(!cell || cell.v===undefined || cell.v===null || String(cell.v).trim()==="") return null;
+            return cell;
+          };
           var jobIdCell = get(colJobId), nameCell = get(colName), companyCell = get(colCompany), linkCell = get(colLink), dueCell = get(colDue);
           if(!nameCell && !companyCell) continue;
 
           var contacts = [];
           contactCols.forEach(function(cc){
             var cell = get(cc);
-            if(cell && cell.v){
+            if(cell){
               var url = cell.l ? cell.l.Target : (typeof cell.v === "string" && cell.v.indexOf("http")===0 ? cell.v : "");
               contacts.push({
                 id: uid("ct"),
