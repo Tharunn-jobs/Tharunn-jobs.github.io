@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pipeline — Referral Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg:#0E1015;
+    --surface:#161922;
+    --surface-2:#1D212C;
+    --border:#2A2F3B;
+    --text:#E9EBF0;
+    --text-muted:#8A90A0;
+    --text-dim:#5C6272;
+
+    --s-none:#3A3F4D;       /* not contacted */
+    --s-none-bg:#22252F;
+    --s-contacted:#4C8DFF;  /* contacted */
+    --s-contacted-bg:#16233F;
+    --s-replied:#34D399;    /* replied */
+    --s-replied-bg:#12332A;
+    --s-referred:#F5B942;   /* referral given */
+    --s-referred-bg:#3A2C10;
+
+    --danger:#F2707A;
+    --radius:10px;
+    --radius-lg:16px;
+    --shadow:0 8px 24px rgba(0,0,0,0.35);
+    --font-display:'Space Grotesk', sans-serif;
+    --font-body:'Inter', sans-serif;
+    --font-mono:'IBM Plex Mono', monospace;
+  }
+
+  *{box-sizing:border-box;}
+  body{margin:0;}
+  html,body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:var(--font-body);
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{background:var(--s-contacted);color:#fff;}
+  button{font-family:inherit;}
+  a{color:inherit;}
+
+  /* ---------- layout ---------- */
+  .app{max-width:1180px;margin:0 auto;padding:28px 20px 80px;}
+
+  .topbar{
+    display:flex;align-items:flex-start;justify-content:space-between;
+    gap:16px;margin-bottom:28px;flex-wrap:wrap;
+  }
+  .brand{display:flex;align-items:center;gap:12px;}
+  .brand-mark{
+    width:38px;height:38px;border-radius:10px;
+    background:linear-gradient(145deg,var(--s-contacted),var(--s-referred));
+    display:flex;align-items:center;justify-content:center;
+    font-family:var(--font-display);font-weight:700;color:#0E1015;font-size:15px;
+    flex-shrink:0;
+  }
+  .brand h1{font-family:var(--font-display);font-weight:700;font-size:22px;margin:0;letter-spacing:-0.01em;}
+  .brand p{margin:2px 0 0;color:var(--text-muted);font-size:13px;}
+
+  .topbar-actions{display:flex;gap:8px;flex-wrap:wrap;}
+
+  .btn{
+    appearance:none;border:1px solid var(--border);background:var(--surface);
+    color:var(--text);padding:9px 14px;border-radius:9px;font-size:13.5px;font-weight:500;
+    cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:.15s ease;
+    white-space:nowrap;
+  }
+  .btn:hover{border-color:#3B4152;background:var(--surface-2);}
+  .btn:active{transform:translateY(1px);}
+  .btn-primary{background:var(--s-contacted);border-color:var(--s-contacted);color:#08111f;font-weight:600;}
+  .btn-primary:hover{background:#69a1ff;border-color:#69a1ff;}
+  .btn-ghost{background:transparent;}
+  .btn-sm{padding:6px 10px;font-size:12.5px;border-radius:7px;}
+  .btn-icon{width:34px;height:34px;padding:0;justify-content:center;}
+
+  /* ---------- stats ---------- */
+  .stats{
+    display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:26px;
+  }
+  .stat{
+    background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
+    padding:14px 16px;
+  }
+  .stat .n{font-family:var(--font-display);font-size:24px;font-weight:700;line-height:1;}
+  .stat .l{font-size:11.5px;color:var(--text-muted);margin-top:6px;text-transform:uppercase;letter-spacing:.06em;}
+  .stat.dot-none .n{color:var(--text-muted);}
+  .stat.dot-contacted .n{color:var(--s-contacted);}
+  .stat.dot-replied .n{color:var(--s-replied);}
+  .stat.dot-referred .n{color:var(--s-referred);}
+
+  /* ---------- toolbar ---------- */
+  .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:18px;flex-wrap:wrap;}
+  .search{
+    flex:1;min-width:180px;background:var(--surface);border:1px solid var(--border);
+    border-radius:9px;padding:9px 12px;color:var(--text);font-size:13.5px;
+  }
+  .search:focus{outline:none;border-color:var(--s-contacted);}
+  .search::placeholder{color:var(--text-dim);}
+  .filter-chip{
+    border:1px solid var(--border);background:var(--surface);color:var(--text-muted);
+    padding:7px 12px;border-radius:999px;font-size:12.5px;cursor:pointer;transition:.15s;
+    display:flex;align-items:center;gap:6px;
+  }
+  .filter-chip.active{color:var(--text);border-color:#454c5e;background:var(--surface-2);}
+  .filter-chip .sw{width:7px;height:7px;border-radius:50%;}
+
+  /* ---------- job cards ---------- */
+  .jobs{display:flex;flex-direction:column;gap:12px;}
+  .job{
+    background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
+    padding:16px 18px;position:relative;overflow:hidden;transition:border-color .15s;
+  }
+  .job::before{
+    content:'';position:absolute;left:0;top:0;bottom:0;width:3px;
+    background:var(--edge, var(--s-none));
+  }
+  .job-head{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;}
+  .job-title-block{display:flex;flex-direction:column;gap:3px;min-width:0;}
+  .job-id{
+    font-family:var(--font-mono);font-size:11px;color:var(--text-dim);
+    letter-spacing:.03em;
+  }
+  .job-name{font-family:var(--font-display);font-weight:600;font-size:16.5px;}
+  .job-company{color:var(--text-muted);font-size:13px;}
+  .job-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .job-due{
+    font-size:11.5px;padding:4px 9px;border-radius:999px;border:1px solid var(--border);
+    color:var(--text-muted);font-family:var(--font-mono);
+  }
+  .job-due.soon{color:var(--s-referred);border-color:#5a4a1e;background:var(--s-referred-bg);}
+  .job-due.over{color:var(--danger);border-color:#5a2a2f;background:#2c161a;}
+
+  .job-actions{display:flex;gap:6px;}
+
+  .job-link{
+    font-size:12.5px;color:var(--s-contacted);text-decoration:none;font-weight:500;
+    display:inline-flex;align-items:center;gap:4px;margin-top:4px;
+  }
+  .job-link:hover{text-decoration:underline;}
+
+  .contacts{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;}
+  .contact{
+    position:relative;
+  }
+  .contact-pill{
+    display:flex;align-items:center;gap:7px;border:1px solid var(--border);
+    background:var(--s-none-bg);padding:6px 10px 6px 8px;border-radius:999px;cursor:pointer;
+    font-size:12.5px;transition:.15s;
+  }
+  .contact-pill:hover{filter:brightness(1.15);}
+  .contact-pill .stage{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--s-none);}
+  .contact-pill.contacted{background:var(--s-contacted-bg);border-color:#294271;}
+  .contact-pill.contacted .stage{background:var(--s-contacted);}
+  .contact-pill.replied{background:var(--s-replied-bg);border-color:#1f5140;}
+  .contact-pill.replied .stage{background:var(--s-replied);}
+  .contact-pill.referred{background:var(--s-referred-bg);border-color:#6b551f;}
+  .contact-pill.referred .stage{background:var(--s-referred);}
+
+  .add-contact-btn{
+    display:flex;align-items:center;gap:5px;border:1px dashed var(--border);
+    background:transparent;color:var(--text-dim);padding:6px 12px;border-radius:999px;
+    cursor:pointer;font-size:12.5px;
+  }
+  .add-contact-btn:hover{color:var(--text-muted);border-color:#454c5e;}
+
+  .popover{
+    position:absolute;top:calc(100% + 8px);left:0;z-index:50;
+    background:var(--surface-2);border:1px solid #363c4a;border-radius:12px;
+    box-shadow:var(--shadow);padding:10px;width:250px;
+  }
+  .popover a.pname{font-weight:600;font-size:13px;color:var(--text);text-decoration:none;display:block;margin-bottom:8px;word-break:break-word;}
+  .popover a.pname:hover{color:var(--s-contacted);}
+  .stage-row{display:flex;gap:6px;margin-bottom:8px;}
+  .stage-btn{
+    flex:1;border:1px solid var(--border);background:var(--bg);color:var(--text-muted);
+    padding:6px 4px;border-radius:7px;font-size:10.5px;cursor:pointer;text-align:center;
+  }
+  .stage-btn.on{color:#08111f;font-weight:600;}
+  .stage-btn[data-s="none"].on{background:var(--s-none);color:var(--text);}
+  .stage-btn[data-s="contacted"].on{background:var(--s-contacted);}
+  .stage-btn[data-s="replied"].on{background:var(--s-replied);}
+  .stage-btn[data-s="referred"].on{background:var(--s-referred);}
+  .popover-actions{display:flex;flex-direction:column;gap:6px;}
+  .popover-actions .btn{width:100%;justify-content:center;}
+
+  /* ---------- empty state ---------- */
+  .empty{
+    text-align:center;padding:70px 20px;color:var(--text-muted);
+    border:1px dashed var(--border);border-radius:var(--radius-lg);
+  }
+  .empty .big{font-family:var(--font-display);font-size:18px;color:var(--text);margin-bottom:6px;}
+
+  /* ---------- modal ---------- */
+  .overlay{
+    position:fixed;inset:0;background:rgba(6,7,10,0.72);backdrop-filter:blur(2px);
+    display:flex;align-items:flex-start;justify-content:center;padding:5vh 16px;z-index:200;
+    overflow-y:auto;
+  }
+  .modal{
+    background:var(--surface);border:1px solid var(--border);border-radius:16px;
+    width:100%;max-width:520px;padding:22px;box-shadow:var(--shadow);
+  }
+  .modal h2{font-family:var(--font-display);font-size:18px;margin:0 0 16px;}
+  .field{margin-bottom:13px;}
+  .field label{display:block;font-size:12px;color:var(--text-muted);margin-bottom:5px;font-weight:500;}
+  .field input,.field textarea{
+    width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;
+    padding:9px 11px;color:var(--text);font-size:13.5px;font-family:inherit;
+  }
+  .field input:focus,.field textarea:focus{outline:none;border-color:var(--s-contacted);}
+  .field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px;}
+  .hint{font-size:11px;color:var(--text-dim);margin-top:5px;}
+
+  .contact-input-row{display:flex;gap:8px;margin-bottom:8px;}
+  .contact-input-row input{flex:1;}
+  .rm-row{
+    border:1px solid var(--border);background:var(--bg);color:var(--text-dim);
+    width:34px;border-radius:8px;cursor:pointer;flex-shrink:0;
+  }
+  .rm-row:hover{color:var(--danger);border-color:#5a2a2f;}
+
+  .file-drop{display:none;}
+
+  footer.note{text-align:center;color:var(--text-dim);font-size:11.5px;margin-top:40px;}
+
+  @media (max-width:640px){
+    .stats{grid-template-columns:repeat(2,1fr);}
+    .field-row{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark">P</div>
+      <div>
+        <h1>Pipeline</h1>
+        <p>Job applications &amp; referral tracker</p>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <button class="btn" id="btnTemplate" title="Edit referral message template">✎ Template</button>
+      <button class="btn" id="btnImportXlsx" title="Import from Excel">⇪ Import Excel</button>
+      <button class="btn" id="btnExportXlsx" title="Export to Excel">⇩ Export Excel</button>
+      <button class="btn btn-primary" id="btnAddJob">+ Add Job</button>
+    </div>
+    <input type="file" id="fileInput" class="file-drop" accept=".xlsx,.xls">
+  </div>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="toolbar">
+    <input class="search" id="search" placeholder="Search job, company or job id…">
+    <div class="filter-chip active" data-filter="all">All</div>
+    <div class="filter-chip" data-filter="contacted"><span class="sw" style="background:var(--s-contacted)"></span>Contacted</div>
+    <div class="filter-chip" data-filter="replied"><span class="sw" style="background:var(--s-replied)"></span>Replied</div>
+    <div class="filter-chip" data-filter="referred"><span class="sw" style="background:var(--s-referred)"></span>Referred</div>
+  </div>
+
+  <div class="jobs" id="jobs"></div>
+
+  <footer class="note">Data is saved automatically in this browser. Use Export Excel or Export JSON regularly to back up.</footer>
+</div>
+
+<!-- Add/Edit Job Modal -->
+<div class="overlay" id="jobModal" style="display:none;">
+  <div class="modal">
+    <h2 id="jobModalTitle">Add job</h2>
+    <div class="field-row">
+      <div class="field">
+        <label>Job ID</label>
+        <input id="f_jobid" placeholder="e.g. R-00283708">
+      </div>
+      <div class="field">
+        <label>Apply before (optional)</label>
+        <input id="f_due" type="date">
+      </div>
+    </div>
+    <div class="field">
+      <label>Job title</label>
+      <input id="f_name" placeholder="e.g. Software Engineer I">
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Company</label>
+        <input id="f_company" placeholder="e.g. Amex">
+      </div>
+      <div class="field">
+        <label>Job link (paste URL)</label>
+        <input id="f_link" placeholder="https://…">
+      </div>
+    </div>
+
+    <div class="field" style="margin-top:16px;">
+      <label>LinkedIn contacts</label>
+      <div id="contactRows"></div>
+      <button class="btn btn-sm btn-ghost" id="addContactRow" type="button">+ Add contact</button>
+      <div class="hint">Paste each person's LinkedIn profile URL — name is auto-filled from it, or type your own.</div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn" id="jobCancel">Cancel</button>
+      <button class="btn btn-primary" id="jobSave">Save job</button>
+    </div>
+  </div>
+</div>
+
+<!-- Template Modal -->
+<div class="overlay" id="templateModal" style="display:none;">
+  <div class="modal">
+    <h2>Referral message template</h2>
+    <div class="field">
+      <label>Message (use {name}, {job}, {company}, {link})</label>
+      <textarea id="f_template" rows="8"></textarea>
+    </div>
+    <div class="hint">This is what gets copied when you hit "Copy referral message" on a contact.</div>
+    <div class="modal-actions">
+      <button class="btn" id="templateCancel">Cancel</button>
+      <button class="btn btn-primary" id="templateSave">Save template</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var STORE_KEY = "pipeline_jobhunt_data_v1";
+  var STAGES = ["none","contacted","replied","referred"];
+  var STAGE_LABEL = {none:"Not contacted", contacted:"Contacted", replied:"Replied", referred:"Referred"};
+
+  var DEFAULT_TEMPLATE = "Hi {name}, hope you're doing well! I recently came across the {job} role at {company} and I'm really interested in applying. I saw you're part of the team there — would you be open to referring me, or sharing any insight on the process? Here's the posting: {link}\n\nHappy to send my resume over. Thanks so much for considering it!";
+
+  var state = load();
+
+  function load(){
+    try{
+      var raw = localStorage.getItem(STORE_KEY);
+      if(raw) return JSON.parse(raw);
+    }catch(e){}
+    return { jobs: [], template: DEFAULT_TEMPLATE };
+  }
+  function save(){
+    localStorage.setItem(STORE_KEY, JSON.stringify(state));
+    render();
+  }
+  function uid(prefix){ return prefix + "_" + Math.random().toString(36).slice(2,9); }
+
+  // ---------- rendering ----------
+  var jobsEl = document.getElementById("jobs");
+  var statsEl = document.getElementById("stats");
+  var searchEl = document.getElementById("search");
+  var currentFilter = "all";
+  var openPopoverId = null;
+
+  function contactStageCounts(){
+    var c = {none:0, contacted:0, replied:0, referred:0};
+    state.jobs.forEach(function(j){
+      (j.contacts||[]).forEach(function(ct){ c[ct.status||"none"]++; });
+    });
+    return c;
+  }
+
+  function renderStats(){
+    var totalJobs = state.jobs.length;
+    var counts = contactStageCounts();
+    var items = [
+      {n:totalJobs, l:"Jobs tracked", cls:""},
+      {n:counts.contacted, l:"Contacted", cls:"dot-contacted"},
+      {n:counts.replied, l:"Replied", cls:"dot-replied"},
+      {n:counts.referred, l:"Referred", cls:"dot-referred"},
+      {n:dueSoonCount(), l:"Deadlines ≤3d", cls:"dot-none"}
+    ];
+    statsEl.innerHTML = items.map(function(it){
+      return '<div class="stat '+it.cls+'"><div class="n">'+it.n+'</div><div class="l">'+it.l+'</div></div>';
+    }).join("");
+  }
+
+  function dueSoonCount(){
+    var now = new Date(); now.setHours(0,0,0,0);
+    var soon = 0;
+    state.jobs.forEach(function(j){
+      if(!j.due) return;
+      var d = new Date(j.due);
+      var diff = (d - now) / 86400000;
+      if(diff >= -3650 && diff <= 3) soon++;
+    });
+    return soon;
+  }
+
+  function edgeColorForJob(job){
+    var order = {none:0, contacted:1, replied:2, referred:3};
+    var best = "none";
+    (job.contacts||[]).forEach(function(ct){
+      if(order[ct.status||"none"] > order[best]) best = ct.status;
+    });
+    var map = {none:"var(--s-none)", contacted:"var(--s-contacted)", replied:"var(--s-replied)", referred:"var(--s-referred)"};
+    return map[best];
+  }
+
+  function fmtDue(due){
+    if(!due) return null;
+    var d = new Date(due);
+    var now = new Date(); now.setHours(0,0,0,0);
+    var diff = Math.round((d - now)/86400000);
+    var label = d.toLocaleDateString(undefined,{month:"short", day:"numeric"});
+    var cls = "";
+    if(diff < 0) cls = "over";
+    else if(diff <= 3) cls = "soon";
+    return {label: label, cls: cls, diff: diff};
+  }
+
+  function jobMatchesFilter(job){
+    if(currentFilter === "all") return true;
+    return (job.contacts||[]).some(function(ct){ return ct.status === currentFilter; });
+  }
+  function jobMatchesSearch(job, q){
+    if(!q) return true;
+    q = q.toLowerCase();
+    return (job.jobId||"").toLowerCase().indexOf(q) > -1 ||
+           (job.name||"").toLowerCase().indexOf(q) > -1 ||
+           (job.company||"").toLowerCase().indexOf(q) > -1;
+  }
+
+  function renderJobs(){
+    var q = searchEl.value.trim();
+    var list = state.jobs.filter(function(j){ return jobMatchesFilter(j) && jobMatchesSearch(j, q); });
+
+    if(state.jobs.length === 0){
+      jobsEl.innerHTML = '<div class="empty"><div class="big">No jobs yet</div>Add your first job, or import your existing Excel sheet to get started.</div>';
+      return;
+    }
+    if(list.length === 0){
+      jobsEl.innerHTML = '<div class="empty"><div class="big">No matches</div>Try a different search or filter.</div>';
+      return;
+    }
+
+    jobsEl.innerHTML = list.map(renderJobCard).join("");
+  }
+
+  function renderJobCard(job){
+    var due = fmtDue(job.due);
+    var contactsHtml = (job.contacts||[]).map(function(ct){ return renderContactPill(job.id, ct); }).join("");
+    var linkHtml = job.link ? '<a class="job-link" href="'+escAttr(job.link)+'" target="_blank" rel="noopener">View posting ↗</a>' : "";
+    var dueHtml = due ? '<span class="job-due '+due.cls+'">'+(due.cls==="over"?"Closed ":"")+due.label+'</span>' : "";
+
+    return (
+      '<div class="job" style="--edge:'+edgeColorForJob(job)+'" data-job="'+job.id+'">'+
+        '<div class="job-head">'+
+          '<div class="job-title-block">'+
+            '<div class="job-id">'+escHtml(job.jobId||"—")+'</div>'+
+            '<div class="job-name">'+escHtml(job.name||"Untitled role")+'</div>'+
+            '<div class="job-company">'+escHtml(job.company||"")+'</div>'+
+            linkHtml+
+          '</div>'+
+          '<div class="job-meta">'+
+            dueHtml+
+            '<div class="job-actions">'+
+              '<button class="btn btn-icon btn-sm" data-action="edit" title="Edit">✎</button>'+
+              '<button class="btn btn-icon btn-sm" data-action="delete" title="Delete">🗑</button>'+
+            '</div>'+
+          '</div>'+
+        '</div>'+
+        '<div class="contacts">'+
+          contactsHtml+
+          '<button class="add-contact-btn" data-action="add-contact">+ contact</button>'+
+        '</div>'+
+      '</div>'
+    );
+  }
+
+  function renderContactPill(jobId, ct){
+    var isOpen = openPopoverId === ct.id;
+    var pop = isOpen ? renderPopover(jobId, ct) : "";
+    return (
+      '<div class="contact" data-contact="'+ct.id+'">'+
+        '<div class="contact-pill '+(ct.status||"none")+'" data-action="toggle-popover">'+
+          '<span class="stage"></span>'+escHtml(ct.name||"contact")+
+        '</div>'+
+        pop+
+      '</div>'
+    );
+  }
+
+  function renderPopover(jobId, ct){
+    var stagesHtml = STAGES.map(function(s){
+      return '<button class="stage-btn '+(ct.status===s?"on":"")+'" data-s="'+s+'" data-action="set-stage">'+STAGE_LABEL[s].split(" ")[0]+'</button>';
+    }).join("");
+    var canMessage = ct.status !== "none";
+    return (
+      '<div class="popover">'+
+        (ct.url ? '<a class="pname" href="'+escAttr(ct.url)+'" target="_blank" rel="noopener">'+escHtml(ct.name)+' ↗</a>' : '<div class="pname">'+escHtml(ct.name)+'</div>')+
+        '<div class="stage-row">'+stagesHtml+'</div>'+
+        '<div class="popover-actions">'+
+          (canMessage ? '<button class="btn btn-sm" data-action="copy-msg">Copy referral message</button>' : '')+
+          '<button class="btn btn-sm btn-ghost" data-action="remove-contact" style="color:var(--danger)">Remove contact</button>'+
+        '</div>'+
+      '</div>'
+    );
+  }
+
+  function escHtml(s){ return String(s==null?"":s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+  function escAttr(s){ return escHtml(s); }
+
+  function render(){
+    renderStats();
+    renderJobs();
+  }
+
+  // ---------- job list interactions (event delegation) ----------
+  jobsEl.addEventListener("click", function(e){
+    var jobCard = e.target.closest(".job");
+    var action = e.target.getAttribute("data-action");
+
+    if(action === "toggle-popover"){
+      var contactEl = e.target.closest(".contact");
+      var cid = contactEl.getAttribute("data-contact");
+      openPopoverId = (openPopoverId === cid) ? null : cid;
+      render();
+      return;
+    }
+    if(action === "set-stage"){
+      var jobId1 = jobCard.getAttribute("data-job");
+      var cid1 = e.target.closest(".contact").getAttribute("data-contact");
+      var s = e.target.getAttribute("data-s");
+      var job1 = state.jobs.find(function(j){return j.id===jobId1;});
+      var ct1 = job1.contacts.find(function(c){return c.id===cid1;});
+      ct1.status = s;
+      save();
+      openPopoverId = cid1;
+      render();
+      return;
+    }
+    if(action === "copy-msg"){
+      var jobId2 = jobCard.getAttribute("data-job");
+      var cid2 = e.target.closest(".contact").getAttribute("data-contact");
+      var job2 = state.jobs.find(function(j){return j.id===jobId2;});
+      var ct2 = job2.contacts.find(function(c){return c.id===cid2;});
+      var msg = state.template
+        .replace(/\{name\}/g, firstName(ct2.name))
+        .replace(/\{job\}/g, job2.name||"")
+        .replace(/\{company\}/g, job2.company||"")
+        .replace(/\{link\}/g, job2.link||"");
+      copyToClipboard(msg, e.target);
+      return;
+    }
+    if(action === "remove-contact"){
+      var jobId3 = jobCard.getAttribute("data-job");
+      var cid3 = e.target.closest(".contact").getAttribute("data-contact");
+      var job3 = state.jobs.find(function(j){return j.id===jobId3;});
+      job3.contacts = job3.contacts.filter(function(c){return c.id!==cid3;});
+      openPopoverId = null;
+      save();
+      return;
+    }
+    if(action === "add-contact"){
+      var jobId4 = jobCard.getAttribute("data-job");
+      var name = prompt("Paste the LinkedIn profile URL (or type a name):");
+      if(!name) return;
+      var job4 = state.jobs.find(function(j){return j.id===jobId4;});
+      job4.contacts = job4.contacts || [];
+      job4.contacts.push(makeContactFromInput(name));
+      save();
+      return;
+    }
+    if(action === "edit"){
+      openJobModal(jobCard.getAttribute("data-job"));
+      return;
+    }
+    if(action === "delete"){
+      if(confirm("Delete this job and all its contacts?")){
+        state.jobs = state.jobs.filter(function(j){return j.id!==jobCard.getAttribute("data-job");});
+        save();
+      }
+      return;
+    }
+    // click outside pill/popover closes popover
+    if(!e.target.closest(".popover") && !e.target.closest(".contact-pill")){
+      if(openPopoverId){ openPopoverId = null; render(); }
+    }
+  });
+
+  document.addEventListener("click", function(e){
+    if(!e.target.closest(".job") && openPopoverId){
+      openPopoverId = null; render();
+    }
+  });
+
+  function firstName(full){
+    if(!full) return "there";
+    var cleaned = full.replace(/[-_]+/g," ").trim();
+    return cleaned.split(" ")[0];
+  }
+
+  function makeContactFromInput(input){
+    input = input.trim();
+    var isUrl = /^https?:\/\//i.test(input) || input.indexOf("linkedin.com") > -1;
+    var name, url;
+    if(isUrl){
+      url = input.indexOf("http") === 0 ? input : "https://" + input;
+      var m = url.match(/linkedin\.com\/in\/([^\/\?]+)/i);
+      name = m ? decodeURIComponent(m[1]).replace(/-/g," ").replace(/\s?\d+$/,"") : url;
+      name = name.replace(/\b\w/g, function(c){return c.toUpperCase();});
+    } else {
+      name = input;
+      url = "";
+    }
+    return {id: uid("ct"), name: name, url: url, status: "none"};
+  }
+
+  function copyToClipboard(text, triggerEl){
+    var done = function(){
+      if(triggerEl){
+        var old = triggerEl.textContent;
+        triggerEl.textContent = "Copied ✓";
+        setTimeout(function(){ triggerEl.textContent = old; }, 1200);
+      }
+    };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(done).catch(function(){ fallbackCopy(text); done(); });
+    } else {
+      fallbackCopy(text); done();
+    }
+  }
+  function fallbackCopy(text){
+    var ta = document.createElement("textarea");
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    try{ document.execCommand("copy"); }catch(e){}
+    document.body.removeChild(ta);
+  }
+
+  // ---------- filters / search ----------
+  document.querySelectorAll(".filter-chip").forEach(function(chip){
+    chip.addEventListener("click", function(){
+      document.querySelectorAll(".filter-chip").forEach(function(c){c.classList.remove("active");});
+      chip.classList.add("active");
+      currentFilter = chip.getAttribute("data-filter");
+      render();
+    });
+  });
+  searchEl.addEventListener("input", render);
+
+  // ---------- job modal ----------
+  var jobModal = document.getElementById("jobModal");
+  var contactRows = document.getElementById("contactRows");
+  var editingJobId = null;
+
+  function openJobModal(jobId){
+    editingJobId = jobId || null;
+    document.getElementById("jobModalTitle").textContent = jobId ? "Edit job" : "Add job";
+    contactRows.innerHTML = "";
+
+    if(jobId){
+      var job = state.jobs.find(function(j){return j.id===jobId;});
+      document.getElementById("f_jobid").value = job.jobId || "";
+      document.getElementById("f_name").value = job.name || "";
+      document.getElementById("f_company").value = job.company || "";
+      document.getElementById("f_link").value = job.link || "";
+      document.getElementById("f_due").value = job.due || "";
+      (job.contacts||[]).forEach(function(ct){ addContactRow(ct.url || ct.name); });
+    } else {
+      document.getElementById("f_jobid").value = "";
+      document.getElementById("f_name").value = "";
+      document.getElementById("f_company").value = "";
+      document.getElementById("f_link").value = "";
+      document.getElementById("f_due").value = "";
+      addContactRow(""); addContactRow("");
+    }
+    jobModal.style.display = "flex";
+  }
+  function closeJobModal(){ jobModal.style.display = "none"; editingJobId = null; }
+
+  function addContactRow(value){
+    var row = document.createElement("div");
+    row.className = "contact-input-row";
+    row.innerHTML = '<input type="text" placeholder="LinkedIn URL or name" value="'+escAttr(value||"")+'">'+
+                     '<button class="rm-row" type="button">✕</button>';
+    row.querySelector(".rm-row").addEventListener("click", function(){ row.remove(); });
+    contactRows.appendChild(row);
+  }
+
+  document.getElementById("btnAddJob").addEventListener("click", function(){ openJobModal(null); });
+  document.getElementById("addContactRow").addEventListener("click", function(){ addContactRow(""); });
+  document.getElementById("jobCancel").addEventListener("click", closeJobModal);
+  jobModal.addEventListener("click", function(e){ if(e.target === jobModal) closeJobModal(); });
+
+  document.getElementById("jobSave").addEventListener("click", function(){
+    var name = document.getElementById("f_name").value.trim();
+    var company = document.getElementById("f_company").value.trim();
+    if(!name || !company){ alert("Please fill in at least job title and company."); return; }
+
+    var link = document.getElementById("f_link").value.trim();
+    if(link && !/^https?:\/\//i.test(link)) link = "https://" + link;
+
+    var rowValues = Array.from(contactRows.querySelectorAll("input")).map(function(i){return i.value.trim();}).filter(Boolean);
+
+    if(editingJobId){
+      var job = state.jobs.find(function(j){return j.id===editingJobId;});
+      job.jobId = document.getElementById("f_jobid").value.trim();
+      job.name = name; job.company = company; job.link = link;
+      job.due = document.getElementById("f_due").value || "";
+      // merge contacts: keep existing status where the url/name matches
+      var oldContacts = job.contacts || [];
+      job.contacts = rowValues.map(function(v){
+        var fresh = makeContactFromInput(v);
+        var match = oldContacts.find(function(o){ return (o.url && o.url===fresh.url) || o.name===fresh.name; });
+        if(match){ fresh.id = match.id; fresh.status = match.status; }
+        return fresh;
+      });
+    } else {
+      state.jobs.unshift({
+        id: uid("job"),
+        jobId: document.getElementById("f_jobid").value.trim(),
+        name: name, company: company, link: link,
+        due: document.getElementById("f_due").value || "",
+        contacts: rowValues.map(makeContactFromInput)
+      });
+    }
+    save();
+    closeJobModal();
+  });
+
+  // ---------- template modal ----------
+  var templateModal = document.getElementById("templateModal");
+  document.getElementById("btnTemplate").addEventListener("click", function(){
+    document.getElementById("f_template").value = state.template || DEFAULT_TEMPLATE;
+    templateModal.style.display = "flex";
+  });
+  document.getElementById("templateCancel").addEventListener("click", function(){ templateModal.style.display = "none"; });
+  templateModal.addEventListener("click", function(e){ if(e.target===templateModal) templateModal.style.display="none"; });
+  document.getElementById("templateSave").addEventListener("click", function(){
+    state.template = document.getElementById("f_template").value;
+    save();
+    templateModal.style.display = "none";
+  });
+
+  // ---------- excel import ----------
+  var fileInput = document.getElementById("fileInput");
+  document.getElementById("btnImportXlsx").addEventListener("click", function(){ fileInput.click(); });
+  fileInput.addEventListener("change", function(){
+    var f = fileInput.files[0];
+    if(!f) return;
+    var reader = new FileReader();
+    reader.onload = function(e){
+      try{
+        var wb = XLSX.read(e.target.result, {type:"array", cellStyles:true});
+        var ws = wb.Sheets[wb.SheetNames[0]];
+        var range = XLSX.utils.decode_range(ws["!ref"]);
+        var headerRow = 0;
+        var headers = {};
+        for(var c = range.s.c; c <= range.e.c; c++){
+          var cell = ws[XLSX.utils.encode_cell({r:headerRow, c:c})];
+          if(cell && cell.v) headers[String(cell.v).toLowerCase().trim()] = c;
+        }
+        function findCol(substr){
+          for(var k in headers){ if(k.indexOf(substr) > -1) return headers[k]; }
+          return -1;
+        }
+        var colJobId = findCol("job id");
+        var colName = findCol("job name");
+        var colCompany = findCol("company");
+        var colLink = findCol("link");
+        var colDue = findCol("apply before");
+        var contactCols = [];
+        for(var k2 in headers){ if(k2.indexOf("contact") > -1) contactCols.push(headers[k2]); }
+
+        var imported = [];
+        for(var r = headerRow+1; r <= range.e.r; r++){
+          var get = function(col){ if(col<0) return null; return ws[XLSX.utils.encode_cell({r:r,c:col})]; };
+          var jobIdCell = get(colJobId), nameCell = get(colName), companyCell = get(colCompany), linkCell = get(colLink), dueCell = get(colDue);
+          if(!nameCell && !companyCell) continue;
+
+          var contacts = [];
+          contactCols.forEach(function(cc){
+            var cell = get(cc);
+            if(cell && cell.v){
+              var url = cell.l ? cell.l.Target : (typeof cell.v === "string" && cell.v.indexOf("http")===0 ? cell.v : "");
+              contacts.push({
+                id: uid("ct"),
+                name: String(cell.v).trim(),
+                url: url || "",
+                status: "contacted"
+              });
+            }
+          });
+
+          var linkVal = "";
+          if(linkCell){ linkVal = linkCell.l ? linkCell.l.Target : (typeof linkCell.v === "string" && linkCell.v.indexOf("http")===0 ? linkCell.v : ""); }
+
+          var dueVal = "";
+          if(dueCell && dueCell.v){
+            if(dueCell.v instanceof Date) dueVal = dueCell.v.toISOString().slice(0,10);
+            else {
+              var m = String(dueCell.v).match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+              if(m) dueVal = m[3]+"-"+m[2].padStart(2,"0")+"-"+m[1].padStart(2,"0");
+            }
+          }
+
+          imported.push({
+            id: uid("job"),
+            jobId: jobIdCell ? String(jobIdCell.v) : "",
+            name: nameCell ? String(nameCell.v) : "",
+            company: companyCell ? String(companyCell.v) : "",
+            link: linkVal,
+            due: dueVal,
+            contacts: contacts
+          });
+        }
+
+        if(imported.length === 0){ alert("Couldn't find any rows to import — check the sheet has headers like 'Job Name', 'Company', etc."); return; }
+        if(confirm("Import "+imported.length+" job(s)? They'll be added to your current list (existing jobs are kept).")){
+          state.jobs = imported.concat(state.jobs);
+          save();
+        }
+      }catch(err){
+        alert("Couldn't read that file: " + err.message);
+      }
+      fileInput.value = "";
+    };
+    reader.readAsArrayBuffer(f);
+  });
+
+  // ---------- excel export ----------
+  document.getElementById("btnExportXlsx").addEventListener("click", function(){
+    var rows = [["Job Id","Job Name","Company","Link","Apply Before","Contact 1","Status 1","Contact 2","Status 2","Contact 3","Status 3","Contact 4","Status 4","Contact 5","Status 5"]];
+    state.jobs.forEach(function(j){
+      var row = [j.jobId||"", j.name||"", j.company||"", j.link||"", j.due||""];
+      for(var i=0;i<5;i++){
+        var ct = (j.contacts||[])[i];
+        row.push(ct ? ct.name : "");
+        row.push(ct ? STAGE_LABEL[ct.status||"none"] : "");
+      }
+      rows.push(row);
+    });
+    var ws = XLSX.utils.aoa_to_sheet(rows);
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Pipeline");
+    XLSX.writeFile(wb, "job_hunt_pipeline.xlsx");
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
